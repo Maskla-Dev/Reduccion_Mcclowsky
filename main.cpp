@@ -1,242 +1,251 @@
 /*
  * Luis Antonio Montoya Morales
- * Para la materia de Fundamentos de programacion
- * Creado el 26 de Septiembre del 2021
+ * An assigment for Fundamentos de Programacion
+ * Last Update October, 5th, 2021
  */
 
 #include <iostream>
 #include <vector>
-#include <array>
-#include <cmath>
-#include <limits>
-#include <algorithm>
+#include <string>
 
 /*
- * Método de reducción Quine Mcclowsky
- * 1 Obtiene los minterminos de un circuito de n variables.
- * 2 Obtiene la agrupacion de los minterminos con igual numero de 1's
+ * Quine Mcclowsky Algorithm
+ * 1 Get n minterms.
+ * 2 Set group list with the same bit number
+ * 3 Get expressions with one bit of difference, set repeated bit as "don't care"
+ * 4 Repeat step 3 until regrouping will impossible, step 4 is named "getting prime implicants"
+ * 5 Cleans prime implicants table
+ * 6 Builds essential prime implicants
+ *      6.a If is impossible build it, choose final prime implicants table as result table.
+ * 7 Prints result on screen
  *
 */
 
-//Renombramiento de objetos para mejorar lectura del codigo
-#define SALIR_MENU -1
-#define ERROR_LECTURA -2
-#define UNIDAD_BOOLEANA 0b01
-using ListaMinterminos = std::vector<unsigned short>;                           //Arreglo dinámico, almacena enteros
-using IndiceArreglo = std::vector<unsigned short>::iterator;                    //Indica el indice de un arreglo
+using ushort = unsigned short;
+using NumberList = std::vector<ushort>;         //Index NumberList
 
-struct PrimoImplicante{
-    ListaMinterminos minterminos;
-    unsigned short numero;
+struct Prime_Implicant{
+    NumberList minterms;
+    std::string simplified_number;
 };
 
-using GrupoUnos = std::vector<PrimoImplicante>;
-using TablaPrimosImplicantes = std::vector<GrupoUnos>;                 //Indice indica grupo de unos
+using BitGroup = std::vector<Prime_Implicant>;  //Index Prime Implicant
+using MasterTable = std::vector <BitGroup>;     //Index BitGroups
+using ImplicantTable = std::vector<std::vector<bool>>; //Bi-dimensional array
 
-//Prototipos
-unsigned int short obtenerNumeroVariables();                                        //Obtiene el numero de variables a evaluar
-void obtenerMinterminos(ListaMinterminos&, unsigned short);                         //Obtiene la posicion de los minterminos
-int leerEntradaNumerica(int);                                                       //Funcion de apoyo para la lectura de valores numericos, lanza mensajes
-                                                                                    // de error en caso de argumento invalido (no interrumpe ejecucion)
-void imprimirMinterminos(ListaMinterminos &);                                       //Imprime lista minterminos
-void imprimirAgrupaciones(TablaPrimosImplicantes &);
-void menuPrincipal(ListaMinterminos&, TablaPrimosImplicantes & ,unsigned short);          //Interfaz
-TablaPrimosImplicantes* obtenerPrimosImplicantes(TablaPrimosImplicantes &);
-bool entradaRangoValido(int, size_t);                                               //Determina si el valor de entrada es positivo en el rango indicado por
-                                                                                    // maximo acotando mayor igual que)
-void eliminarMinterminos(ListaMinterminos&, unsigned short);                        //Elimina mintermino de la lista
-int iniciarReduccion(ListaMinterminos&, TablaPrimosImplicantes &, unsigned short);                        //Inicia proceso de reduccion Quine Macclowsky
-unsigned short contarUnos(unsigned short, unsigned short);                          //Cuenta el numero de unos en su expresion booleana de un numero entero positivo
-void limpiarTabla(TablaPrimosImplicantes&, unsigned short);
+MasterTable* groupByBits(MasterTable&);
+ushort countBits(std::string&);
+bool isEmptyTable(MasterTable&);
+std::string numberToExtendedBinaryString(ushort, ushort);
+void setBinaryExpressionZeros(std::string&, ushort);
+int getUniqueChangePosition(std::string&, std::string&);
+std::string setDontCareBit(std::string, unsigned short);
+void cleanMaster(MasterTable&);
+void getImplicantFromMaster(MasterTable&, BitGroup&);
+BitGroup makeImplicantTable(MasterTable&, NumberList&,ImplicantTable&);
+ushort findFirstMintermFromList(NumberList&, ushort);
+void printImplicantTable(ImplicantTable&);
+std::string getLettersFromImplicants(std::string&, ushort);
 
-int main() {
-    unsigned short numero_variables = obtenerNumeroVariables();
-    ListaMinterminos tabla_minterminos;
-    TablaPrimosImplicantes tabla_agrupaciones(numero_variables);
-    menuPrincipal(tabla_minterminos, tabla_agrupaciones, numero_variables);
+int main(){
+    ushort input_size = 4;
+    NumberList minterms({1,3,4,5,9,11,12,13,14,15});
+    MasterTable table(input_size), *tmp_table;
+    Prime_Implicant tmp;
+    ImplicantTable implicant_table;
+    BitGroup essential_implicants;
+    //First Iteration
+    for(auto& i : minterms){
+        tmp.minterms.push_back(i);
+        tmp.simplified_number = numberToExtendedBinaryString(i, input_size);
+        table[countBits(tmp.simplified_number) - 1].push_back(tmp);
+        tmp.minterms.clear();
+    }
+    //Second Iteration
+    while(table.size() >= 2){
+        tmp_table = groupByBits(table);
+        if(!isEmptyTable(*tmp_table)){
+            table = *tmp_table;
+            delete tmp_table;
+            tmp_table = nullptr;
+        }
+        else
+            break;
+    }
+    cleanMaster(table);
+    essential_implicants = makeImplicantTable(table, minterms, implicant_table);
+    if(!essential_implicants.empty()){
+        for(int i = 0; i < essential_implicants.size(); ++i){
+            std::cout << getLettersFromImplicants(essential_implicants[i].simplified_number, input_size);
+            if(i != essential_implicants.size() - 1)
+                std::cout << " + ";
+        }
+    }
+    else{
+        for(int i = 0; i < table.size(); ++i){
+            for(int j = 0; j < table[i].size(); ++j)
+                std::cout << getLettersFromImplicants(table[i][j].simplified_number, input_size);
+            if(i != essential_implicants.size() - 1)
+                std::cout << " + ";
+        }
+    }
     return 0;
 }
 
-unsigned short obtenerNumeroVariables(){
-    int numero_variables = 0;
-    do{
-        std::cout << "Inserte el numero de variables (dos o mas variables):" << std::endl;
-        numero_variables = leerEntradaNumerica(0);
-        if(numero_variables < 2)
-            std::cout << "Intente con valor numerico positivo mayor a 2 y menor a " << std::numeric_limits<unsigned short>::max() << std::endl;
-    }while(numero_variables < 2);
-    return static_cast<unsigned short>(numero_variables);
-}
-
-void menuPrincipal(ListaMinterminos& lista, TablaPrimosImplicantes & tabla, const unsigned short numero_variables){
-    int opcion = 0;
-    do{
-        std::cout <<    "Elija una opcion:" << std::endl <<
-                        "0 Agregar minterminos" << std::endl <<
-                        "1 Eliminar mintermino" << std::endl <<
-                        "2 Iniciar reduccion Quine Mcclowsky" << std::endl <<
-                        "-1 Salir" << std::endl;
-        opcion = leerEntradaNumerica(ERROR_LECTURA);
-        if(entradaRangoValido(opcion, 4) && opcion >= 0)
-            switch (opcion) {
-            case 0:
-                obtenerMinterminos(lista, numero_variables);
-                break;
-            case 1:
-                eliminarMinterminos(lista, numero_variables);
-                break;
-            case 2:
-                opcion = iniciarReduccion(lista, tabla, numero_variables);
-                break;
-            }
-    }while(opcion != SALIR_MENU);
-}
-
-void obtenerMinterminos(ListaMinterminos& lista, const unsigned short numero_variables){
-    int mintermino = 0;
-    std::cout << "Introduzca los minterminos del circuito (-1 para regresar al menu)" << std::endl;
-    do{
-        mintermino = leerEntradaNumerica(ERROR_LECTURA);
-        if(entradaRangoValido(mintermino, static_cast<size_t>(std::pow(2, numero_variables))) && mintermino >= 0){
-            if(std::find(lista.begin(), lista.end(), static_cast<unsigned short>(mintermino)) == lista.end()){
-                lista.push_back(static_cast<unsigned short>(mintermino));
-                std::cout << mintermino << " agregado" << std::endl;
-            }
-            else
-                std::cout << mintermino << " ya se encuentra en la lista" << std::endl;
-        }
-    }while(mintermino != SALIR_MENU);
-    std::sort(lista.begin(), lista.end());
-    std::cout << std::endl << "Terminada la lectura de minterminos" << std::endl;
-}
-
-void eliminarMinterminos(ListaMinterminos& lista, const unsigned short numero_variables){
-    int mintermino = 0;
-    IndiceArreglo posicion_encontrado;
-    imprimirMinterminos(lista);
-    std::cout << "Indique mintermino a eliminar (-1 para salir)" << std::endl;
-    do{
-        imprimirMinterminos(lista);
-        mintermino = leerEntradaNumerica(ERROR_LECTURA);
-        if(entradaRangoValido(mintermino, static_cast<size_t>(std::pow(2, numero_variables))) && mintermino >= 0) {
-            posicion_encontrado = std::find(lista.begin(), lista.end(), static_cast<unsigned short>(mintermino));
-            if(posicion_encontrado != lista.end()){
-                std::cout << "Mintermino " << mintermino << " eliminado" << std::endl;
-                lista.erase(posicion_encontrado);
-            }
-            else
-                std::cout << "Mintermino no encontrado" << std::endl << std::endl;
-        }
-    }while(mintermino != SALIR_MENU);
-}
-
-int iniciarReduccion(ListaMinterminos& lista, TablaPrimosImplicantes & tabla, unsigned short numero_variables){
-    //Recorre la lista de minterminos, cuenta el numero de unos del mintermino y agrega a la tabla dicho mintermino
-    //La tabla tiene tamaño de n variables, y el indice i indica la agrupacion con i + 1 unos
-    TablaPrimosImplicantes *tmp;
-    GrupoUnos grupo_tmp;
-    PrimoImplicante primo_tmp;
-    ListaMinterminos lista_tmp;
-    unsigned short indice = 0;
-
-    if(lista.empty())
-        std::cout << "Lista minterminos vacia, nada que procesar." << std::endl;
-    else{
-        imprimirMinterminos(lista);
-        std::cout << std::endl;
-        for(unsigned short i : lista){
-            indice = contarUnos(i, numero_variables) - 1;
-            primo_tmp.minterminos.push_back(i);
-            primo_tmp.numero = i;
-            if(!tabla[indice].empty())
-                tabla[indice].emplace_back(primo_tmp);
-            else{
-                grupo_tmp.push_back(primo_tmp);
-                tabla.insert(tabla.begin() + indice, grupo_tmp);
-            }
-            primo_tmp.minterminos.clear();
-            grupo_tmp.clear();
-        }
-        tabla.shrink_to_fit();
-        limpiarTabla(tabla, numero_variables);
-        imprimirAgrupaciones(tabla);
-        //Obtencion de los primos implicantes
-        //Desde la tabla principal de agrupaciones de unos
-        tmp = obtenerPrimosImplicantes(tabla);
-        imprimirAgrupaciones(*tmp);
-    }
-    return -1;
-}
-
-void limpiarTabla(TablaPrimosImplicantes& tabla, unsigned short numero_variables){
-    while(tabla.size() !=numero_variables)
-        tabla.pop_back();
-}
-
-TablaPrimosImplicantes* obtenerPrimosImplicantes(TablaPrimosImplicantes & tabla, unsigned short numero_variables){
-    auto *tmp = new TablaPrimosImplicantes(numero_variables - 1);
-    GrupoUnos grupo_tmp;
-    PrimoImplicante primo_tmp;
-    ListaMinterminos lista_tmp;
-    for(int i = 0; i < tabla.size() - 1; ++i){
-        for(int j = 0; j < tabla[i].size(); ++j){
-            for(int k = 0; k < tabla[i][j].minterminos.size(); ++k){
-                if(contarUnos(tabla[i][j].numero^tabla[i+1][k].numero, numero_variables) == 1){
-                    primo_tmp.minterminos.insert(primo_tmp.minterminos.end(), tabla[i][j].minterminos.begin(), tabla[i][j].minterminos.end());
-                    primo_tmp.minterminos.insert(primo_tmp.minterminos.end(), tabla[i+1][k].minterminos.begin(), tabla[i+1][k].minterminos.end());
-                    primo_tmp.numero = contarUnos(tabla[i][j].numero^tabla[i+1][k].numero, numero_variables);
-                    grupo_tmp.push_back(primo_tmp);
-                    primo_tmp.minterminos.clear();
+MasterTable* groupByBits(MasterTable &master){
+    auto* tmp_master_table = new MasterTable(master.size() - 1);
+    Prime_Implicant tmp_implicant;
+    int position;
+    //Index Groups
+    for(int i = 0; i < master.size() - 1; ++i){
+        //Index Minterms for i
+        for(int j = 0; j < master[i].size(); ++j){
+            //Index Minterms for i + 1
+            for(int k = 0; k < master[i + 1].size(); ++k){
+                //Count bits for ith prime implicant and the next XOR operation, if counts 1 merge and simplify with XOR operation
+                position = getUniqueChangePosition(master[i][j].simplified_number, master[i + 1][k].simplified_number);
+                if(position != -1) {
+                    tmp_implicant.minterms.insert(tmp_implicant.minterms.end(), master[i][j].minterms.begin(), master[i][j].minterms.end());
+                    tmp_implicant.minterms.insert(tmp_implicant.minterms.end(), master[i + 1][k].minterms.begin(), master[i + 1][k].minterms.end());
+                    tmp_implicant.simplified_number = setDontCareBit(master[i][j].simplified_number, position);
+                    (*tmp_master_table)[i].push_back(tmp_implicant);
+                    tmp_implicant.minterms.clear();
                 }
             }
-            tmp->insert(tmp->begin() + i, grupo_tmp);
-            grupo_tmp.clear();
         }
     }
-    return tmp;
+    return tmp_master_table;
 }
 
-void imprimirMinterminos(ListaMinterminos& lista){
-    std::cout << "Lista minterminos: " << std::endl;
-    for(auto& i : lista)
-        std::cout << i << " ";
-    std::cout << std::endl;
+BitGroup makeImplicantTable(MasterTable& master, NumberList& minterms_list,ImplicantTable& implicant_table){
+    //Initialize implicant table
+    BitGroup prime_implicants, essential_prime_implicants;
+    getImplicantFromMaster(master, prime_implicants);
+    std::vector<bool> tmp_implicant_row(prime_implicants.size(), false);
+    for(int i = 0; i < minterms_list.size(); ++i){
+        implicant_table.push_back(tmp_implicant_row);
+    }
+    //Fills with prime implicants
+    for(int i = 0; i < prime_implicants.size(); ++i)
+        for(auto& j : prime_implicants[i].minterms)
+            implicant_table[findFirstMintermFromList(minterms_list, j)][i] = true;
+    //Analyze rows
+    int unique_truth = -1;
+    bool was_changed = false;
+    for(auto & i : implicant_table){
+        for(int j = 0; j < i.size(); ++j){
+            if(i[j]){
+                if(!was_changed){
+                    unique_truth = j;
+                    was_changed = true;
+                }
+                else{
+                    unique_truth = -1;
+                    break;
+                }
+            }
+        }
+        if(unique_truth != -1)
+            essential_prime_implicants.push_back(prime_implicants[unique_truth]);
+        was_changed = false;
+    }
+    return essential_prime_implicants;
 }
 
-void imprimirAgrupaciones(TablaPrimosImplicantes & tabla){
-    for(int i = 0; i < tabla.size(); ++i){
-        std::cout << "Agrupaciones con " << (i + 1) << std::endl;
-        for(auto & j : tabla[i]) {
-            imprimirMinterminos(j.minterminos);
-            std::cout << "\tnumero " << j.numero << std::endl;
+void getImplicantFromMaster(MasterTable& master, BitGroup& prime_implicants_list){
+    for(auto& i : master)
+        for(auto& j : i)
+            prime_implicants_list.push_back(j);
+}
+
+bool isEmptyTable(MasterTable& table){
+    bool isEmpty = false;
+    if(table.size() == 1)
+        return true;
+    else{
+        for(int i = 0; i < table.size() - 1; ++i)
+            isEmpty = table[i].empty() && table[i + 1].empty();
+        return isEmpty;
+    }
+}
+
+ushort countBits(std::string& number){
+    ushort bit_count = 0;
+    for(auto& i : number)
+        bit_count += (i == '1');
+    return bit_count;
+}
+
+std::string numberToExtendedBinaryString(ushort number, ushort input_size){
+    std::string binary_expression;
+    setBinaryExpressionZeros(binary_expression, input_size);
+    while(number != 0){
+        binary_expression[(input_size--) - 1] = static_cast<char>(48 + (number % 2));
+        number /= 2;
+    }
+    return binary_expression;
+}
+
+void setBinaryExpressionZeros(std::string& binary, ushort input_size){
+    while(input_size-- > 0)
+        binary += '0';
+}
+
+int getUniqueChangePosition(std::string& binary_expression1, std::string& binary_expression2){
+    int position = 0;
+    bool was_changed_before = false;
+    for(int i = 0; i < binary_expression1.size(); ++i)
+        if(binary_expression1[i] != binary_expression2[i]){
+            if (!was_changed_before) {
+                position = i;
+                was_changed_before = true;
+            }
+            else
+                return -1;
+        }
+    return position;
+}
+
+std::string setDontCareBit(std::string binary_expression, unsigned short position){
+    binary_expression[position] = '-';
+    return binary_expression;
+}
+
+void cleanMaster(MasterTable& master){
+    for(auto& i : master){
+        //Index Minterms for i
+        for(int j = 0; j < i.size() - 1; ++j){
+            for(int k = j + 1; k < i.size(); ++k){
+                if(i[j].simplified_number == i[k].simplified_number)
+                    i.erase(i.begin() + k);
+            }
         }
     }
 }
 
-bool entradaRangoValido(int numero, size_t maximo){
-    if(numero <= ERROR_LECTURA || numero >= maximo){
-        std::cout << "Intente con valor numerico positivo mayor a 0 y menor a " << maximo << std::endl;
-        return false;
-    }
-    return true;
+ushort findFirstMintermFromList(NumberList& minterms, ushort minterm){
+    for(int i = 0; i < minterms.size(); ++i)
+        if(minterms[i] == minterm)
+            return i;
 }
 
-int leerEntradaNumerica(const int retorno_default){
-    int valor_leido = 0;
-    try {
-        std::cin >> valor_leido;
-    }catch (std::invalid_argument &exc){
-        std::cerr << ("Argumento invalido: ") << exc.what() <<std::endl;
-        return retorno_default;
+void printImplicantTable(ImplicantTable & table){
+    for(auto& i : table){
+        for(auto && j : i)
+            std::cout << j << " ";
+        std::cout << std::endl;
     }
-    return valor_leido;
+
 }
 
-unsigned short contarUnos(unsigned short numero, const unsigned short numero_variables){
-    unsigned short contador = 0;
-    for(int i = 0; i < numero_variables; ++i){
-        contador += numero&UNIDAD_BOOLEANA;
-        numero >>= 1;
+std::string getLettersFromImplicants(std::string& binary_expression, ushort variable_number){
+    std::string products;
+    for(int i = 0; i < binary_expression.size(); ++i){
+        if(binary_expression[i] != '-'){
+            products += static_cast<char>(65 + i);
+            if(binary_expression[i] == '0')
+                products += '\'';
+        }
     }
-    return contador;
+    return products;
 }
